@@ -20,11 +20,38 @@ from langchain_openai import AzureChatOpenAI
 from .config import AppConfig
 
 
-def _build_model(config: AppConfig) -> AzureChatOpenAI:
+def _normalize_reasoning_effort(effort: str | None) -> str | None:
+    """Normalize reasoning effort values for provider compatibility.
+
+    Azure/OpenAI currently supports low|medium|high. We accept "xhigh" as a
+    local alias and map it to "high".
+    """
+    if not effort:
+        return "high"
+
+    normalized = effort.strip().lower()
+    if normalized == "xhigh":
+        return "high"
+    if normalized in {"low", "medium", "high"}:
+        return normalized
+    return None
+
+
+def _build_model(config: AppConfig, reasoning_effort_override: str | None = None) -> AzureChatOpenAI:
     """Construct the AzureChatOpenAI model instance."""
     azure = config.azure
 
-    return AzureChatOpenAI(
+    # Some Azure deployments (e.g. GPT-5 / Codex) only support the Responses API.
+    # langchain-openai can route automatically, but we force it on to avoid
+    # accidental Chat Completions calls that Azure rejects with OperationNotSupported.
+    #
+    # langchain_openai.AzureChatOpenAI exposes reasoning_effort as an explicit
+    # pydantic field. Passing it via model_kwargs triggers a LangChain warning.
+    # Keep this explicit so odd env values fail fast.
+    effort = reasoning_effort_override or config.agent.reasoning_effort or "medium"
+    reasoning_effort = _normalize_reasoning_effort(effort)
+
+    kwargs: dict[str, Any] = dict(
         azure_deployment=azure.deployment_name,
         azure_endpoint=azure.endpoint,
         api_key=azure.api_key,
@@ -32,6 +59,10 @@ def _build_model(config: AppConfig) -> AzureChatOpenAI:
         max_retries=config.agent.max_retries,
         timeout=config.agent.timeout,
     )
+    if reasoning_effort:
+        kwargs["reasoning_effort"] = reasoning_effort
+
+    return AzureChatOpenAI(**kwargs)
 
 
 def _build_interrupt_config(config: AppConfig) -> dict[str, Any]:
@@ -112,6 +143,7 @@ def create_agent(
     config: AppConfig,
     extra_tools: Optional[list] = None,
     system_prompt_override: Optional[str] = None,
+    reasoning_effort_override: Optional[str] = None,
 ):
     """
     Create and return a fully configured DeepAgent wired to Azure OpenAI.
@@ -121,7 +153,7 @@ def create_agent(
     from deepagents import create_deep_agent
     from deepagents.backends import LocalShellBackend
 
-    model = _build_model(config)
+    model = _build_model(config, reasoning_effort_override=reasoning_effort_override)
     tools = _build_extra_tools(config)
     if extra_tools:
         tools.extend(extra_tools)
@@ -135,13 +167,22 @@ def create_agent(
     # System prompt
     prompt = system_prompt_override or config.agent.system_prompt
 
+    # If no explicit system prompt is configured, add a small root-dir hint.
+    # This helps the model understand that relative paths should be resolved
+    # against the backend root directory.
+    if not prompt:
+        prompt = (
+            f"Your working directory for file operations is: {root_dir}\n"
+            "When the user mentions a relative path or filename, resolve it relative to that directory.\n"
+        )
+
     # Build the agent
     agent = create_deep_agent(
         name=config.agent.agent_name,
         model=model,
         tools=tools if tools else None,
         system_prompt=prompt,
-        backend=LocalShellBackend(root_dir=root_dir),
+        backend=LocalShellBackend(root_dir=root_dir, virtual_mode=False),
         interrupt_on=interrupt_config if interrupt_config else None,
         checkpointer=checkpointer,
     )

@@ -1,3 +1,4 @@
 """DeepAgent Azure CLI - A turnkey coding assistant powered by DeepAgents + Azure OpenAI."""
 
-__version__ = "0.1.0"
+# Keep version here so packaging/CLI can import it without side effects.
+__version__ = "0.2.0"

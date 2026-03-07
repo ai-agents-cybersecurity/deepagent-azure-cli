@@ -49,7 +49,6 @@ def _extract_base_endpoint(endpoint: str) -> str:
         return endpoint
 
     parsed = urlparse(endpoint)
-    # Return just scheme + host (strip path, query params, fragments)
     base = f"{parsed.scheme}://{parsed.netloc}"
     return base
 
@@ -127,6 +126,9 @@ class AgentConfig:
     # Auto-approve read-only operations
     approve_reads: bool = False
 
+    # LLM reasoning effort (low|medium|high)
+    reasoning_effort: str = "medium"
+
     # Max retries for LLM calls (handles 429 / 5xx)
     max_retries: int = 6
 
@@ -158,7 +160,7 @@ def load_config() -> AppConfig:
     """Build an AppConfig from environment variables and .env files."""
     _load_env_files()
 
-    # Read the raw endpoint — might contain full path + query params
+    # Read the raw endpoint - might contain full path + query params
     raw_endpoint = os.getenv("AZURE_OPENAI_ENDPOINT", "")
 
     # Extract base URL (strip /openai/responses?api-version=... etc.)
@@ -173,11 +175,11 @@ def load_config() -> AppConfig:
         default=api_version_from_url or "2025-04-01-preview",
     )
 
-    # Support multiple deployment env var names (including common typos)
+    # Be forgiving: teams copy/paste env names, and typos happen in real life.
     deployment_name = _getenv_first(
         "AZURE_OPENAI_DEPLOYMENT_NAME",  # standard
         "AZURE_OPENAI_DEPLOYMENT",       # alternate standard
-        "AZURE_OPENAT_DEPLOYMENT",       # common typo — support it
+        "AZURE_OPENAT_DEPLOYMENT",       # common typo - support it
     )
 
     azure = AzureConfig(
@@ -195,6 +197,7 @@ def load_config() -> AppConfig:
         approve_shell=os.getenv("DEEPAGENT_APPROVE_SHELL", "true").lower() == "true",
         approve_writes=os.getenv("DEEPAGENT_APPROVE_WRITES", "true").lower() == "true",
         approve_reads=os.getenv("DEEPAGENT_APPROVE_READS", "false").lower() == "true",
+        reasoning_effort=os.getenv("DEEPAGENT_REASONING_EFFORT", "medium"),
         max_retries=int(os.getenv("DEEPAGENT_MAX_RETRIES", "6")),
         timeout=int(os.getenv("DEEPAGENT_TIMEOUT", "120")),
         enable_search=os.getenv("DEEPAGENT_ENABLE_SEARCH", "false").lower() == "true",
@@ -225,7 +228,7 @@ def init_user_config() -> Path:
 # ============================================================
 AZURE_OPENAI_API_KEY=
 AZURE_OPENAI_ENDPOINT=https://YOUR-RESOURCE.openai.azure.com
-AZURE_OPENAI_DEPLOYMENT_NAME=gpt-5.3-codex
+AZURE_OPENAI_DEPLOYMENT_NAME=gpt-5-codex
 AZURE_OPENAI_API_VERSION=2025-04-01-preview
 
 # Note: AZURE_OPENAI_ENDPOINT can be either:
@@ -241,6 +244,7 @@ AZURE_OPENAI_API_VERSION=2025-04-01-preview
 # ============================================================
 # DEEPAGENT_APPROVE_SHELL=true
 # DEEPAGENT_APPROVE_WRITES=true
+# DEEPAGENT_REASONING_EFFORT=medium
 # DEEPAGENT_ROOT_DIR=.
 # DEEPAGENT_MAX_RETRIES=6
 # DEEPAGENT_TIMEOUT=120

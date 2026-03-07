@@ -17,6 +17,7 @@ import click
 from rich.console import Console
 
 from .config import AppConfig, init_user_config, load_config
+from .interaction_logger import DailyInteractionLogger, extract_token_usage, merge_token_usage
 
 console = Console()
 
@@ -81,6 +82,30 @@ def _validate_config(config: AppConfig) -> bool:
     default=None,
     help="Override Azure OpenAI endpoint URL.",
 )
+@click.option(
+    "--effort",
+    type=click.Choice(["low", "medium", "high"], case_sensitive=False),
+    default=None,
+    help="LLM reasoning effort (low|medium|high). Overrides DEEPAGENT_REASONING_EFFORT.",
+)
+@click.option(
+    "--effort-low",
+    is_flag=True,
+    default=False,
+    help="Shortcut for --effort low.",
+)
+@click.option(
+    "--effort-medium",
+    is_flag=True,
+    default=False,
+    help="Shortcut for --effort medium.",
+)
+@click.option(
+    "--effort-high",
+    is_flag=True,
+    default=False,
+    help="Shortcut for --effort high.",
+)
 def main(
     init: bool,
     message: str | None,
@@ -90,6 +115,10 @@ def main(
     checkpoint_db: str | None,
     deployment: str | None,
     endpoint: str | None,
+    effort: str | None,
+    effort_low: bool,
+    effort_medium: bool,
+    effort_high: bool,
 ) -> None:
     """DeepAgent Azure CLI — a coding assistant powered by DeepAgents + Azure OpenAI."""
 
@@ -100,8 +129,13 @@ def main(
         console.print("[dim]Edit the file and fill in your Azure OpenAI credentials.[/dim]")
         return
 
-    # Load configuration
+    # Load config once, then layer CLI flags on top (easier to reason about precedence).
     config = load_config()
+
+    # Default root dir to the directory where 'daz' is invoked from.
+    # This makes relative file references (e.g. 'review src.py') work naturally.
+    if not root_dir and (not config.agent.root_dir or config.agent.root_dir == "."):
+        config.agent.root_dir = "."
 
     # Apply CLI overrides
     if root_dir:
@@ -117,6 +151,16 @@ def main(
         config.azure.deployment_name = deployment
     if endpoint:
         config.azure.endpoint = endpoint
+
+    # Priority order is intentional: explicit shortcut flags win over the generic --effort switch.
+    if effort_low:
+        config.agent.reasoning_effort = "low"
+    elif effort_medium:
+        config.agent.reasoning_effort = "medium"
+    elif effort_high:
+        config.agent.reasoning_effort = "high"
+    elif effort:
+        config.agent.reasoning_effort = effort.lower()
 
     # Validate
     if not _validate_config(config):
@@ -140,7 +184,7 @@ def main(
         _run_oneshot(agent, config, message)
         return
 
-    # Interactive REPL
+    # Interactive REPL (now Textual TUI)
     from .repl import AgentREPL
 
     repl = AgentREPL(agent, config)
@@ -152,6 +196,17 @@ def _run_oneshot(agent, config: AppConfig, message: str) -> None:
     import uuid
 
     thread_id = str(uuid.uuid4())
+    logger = DailyInteractionLogger()
+    turn_id = logger.new_turn_id()
+
+    logger.log_request(thread_id=thread_id, turn_id=turn_id, message=message)
+    logger.flush()
+
+    token_totals: dict[str, int | None] = {
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "total_tokens": 0,
+    }
 
     try:
         result = agent.invoke(
@@ -159,17 +214,52 @@ def _run_oneshot(agent, config: AppConfig, message: str) -> None:
             config={"configurable": {"thread_id": thread_id}},
         )
 
-        # Print the final AI message
+        # Extract token usage from result messages
         messages = result.get("messages", [])
+        for msg in messages:
+            usage = extract_token_usage(msg)
+            if usage is not None:
+                token_totals = merge_token_usage(token_totals, usage)
+
+        # Print the final AI message
+        content = None
         for msg in reversed(messages):
             if hasattr(msg, "type") and msg.type == "ai" and msg.content:
-                console.print(msg.content)
-                break
+                content = msg.content
+                if content:
+                    console.print(content)
+                    break
+
+        logger.log_completion(
+            thread_id=thread_id,
+            turn_id=turn_id,
+            status="completed",
+            token_usage={
+                "input_tokens": token_totals.get("input_tokens") or 0,
+                "output_tokens": token_totals.get("output_tokens") or 0,
+                "total_tokens": token_totals.get("total_tokens") or 0,
+            },
+        )
+        logger.flush(force=True)
 
     except KeyboardInterrupt:
+        logger.log_completion(
+            thread_id=thread_id,
+            turn_id=turn_id,
+            status="interrupted",
+            error="KeyboardInterrupt",
+        )
+        logger.flush(force=True)
         console.print("\n[dim]Interrupted.[/dim]")
         sys.exit(130)
     except Exception as e:
+        logger.log_completion(
+            thread_id=thread_id,
+            turn_id=turn_id,
+            status="error",
+            error=str(e),
+        )
+        logger.flush(force=True)
         console.print(f"[bold red]Error:[/bold red] {e}")
         sys.exit(1)
 
