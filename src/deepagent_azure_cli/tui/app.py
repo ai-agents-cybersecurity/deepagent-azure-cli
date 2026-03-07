@@ -59,7 +59,6 @@ class DeepAgentTUI(App[None]):
     BINDINGS = [
         ("ctrl+c", "quit", "Quit"),
         ("ctrl+l", "copy_last_assistant", "Copy last response"),
-        ("ctrl+t", "copy_timeline", "Copy timeline"),
     ]
 
     def __init__(self, agent: Any, config: AppConfig) -> None:
@@ -86,7 +85,6 @@ class DeepAgentTUI(App[None]):
         self._turn_seen_usage_keys: set[str] = set()
 
         self._last_assistant_text: str = ""
-        self._timeline_plain_lines: list[str] = []
 
     # -------------------------- UI composition --------------------------
 
@@ -114,10 +112,6 @@ class DeepAgentTUI(App[None]):
     def action_copy_last_assistant(self) -> None:
         text = self._last_assistant_text.strip()
         self._copy_text_to_clipboard(text, empty_message="No assistant response to copy yet.")
-
-    def action_copy_timeline(self) -> None:
-        text = "\n\n".join(line for line in self._timeline_plain_lines if line.strip())
-        self._copy_text_to_clipboard(text, empty_message="Timeline is empty.")
 
     def _copy_text_to_clipboard(self, text: str, *, empty_message: str) -> None:
         if not text:
@@ -193,8 +187,9 @@ class DeepAgentTUI(App[None]):
         pass
 
     def on_key(self, event) -> None:
-        """Handle key presses; submit on Enter."""
-        if event.key == "enter":
+        """Handle key presses; submit on Ctrl+S."""
+        if event.key == "ctrl+s":
+            event.prevent_default()
             prompt = self.query_one("#prompt", TextArea)
             if prompt.disabled:
                 return
@@ -374,6 +369,11 @@ class DeepAgentTUI(App[None]):
                 if not isinstance(state_update, dict):
                     continue
                 messages = state_update.get("messages", [])
+                # LangGraph may wrap messages in an Overwrite object
+                if hasattr(messages, "value"):
+                    messages = messages.value
+                if not isinstance(messages, list):
+                    messages = [messages]
                 for msg in messages:
                     self._render_message(msg)
 
@@ -407,7 +407,6 @@ class DeepAgentTUI(App[None]):
             text = str(content)
             if text.strip():
                 self._last_assistant_text = text
-                self._timeline_plain_lines.append(f"Assistant: {text}")
                 self._emit(AssistantEvent(markdown=text))
         elif msg_type == "tool":
             tool_name = getattr(msg, "name", "tool")

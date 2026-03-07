@@ -1,12 +1,16 @@
 # DeepAgent Azure CLI
 
-![Version](https://img.shields.io/badge/version-0.2.0-brightgreen) ![Release](https://img.shields.io/badge/release-March%202026-blue) ![License](https://img.shields.io/badge/License-MIT-blue.svg) ![Python](https://img.shields.io/badge/python-3.11+-blue) ![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20Windows-green) ![API](https://img.shields.io/badge/API-Azure%20OpenAI-0078D4?logo=microsoftazure) ![Framework](https://img.shields.io/badge/Framework-LangGraph%20%2B%20DeepAgents-orange) ![Built with](https://img.shields.io/badge/Built%20with-Claude-7B3F00?logo=anthropic) ![Author](https://img.shields.io/badge/Author-Nicolas%20Cravino-lightgrey?logo=github)
+![Version](https://img.shields.io/badge/version-0.2.0-brightgreen) ![Release](https://img.shields.io/badge/release-March%202026-blue) ![License](https://img.shields.io/badge/License-MIT-blue.svg) ![Python](https://img.shields.io/badge/python-3.11+-blue) ![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20Windows-green) ![API](https://img.shields.io/badge/API-Azure%20OpenAI-0078D4?logo=microsoftazure) ![Framework](https://img.shields.io/badge/Framework-LangGraph%20%2B%20DeepAgents-orange) ![Built with](https://img.shields.io/badge/Built%20with-Claude-7B3F00?logo=anthropic) ![Author](https://img.shields.io/badge/Author-Nicolas%20Cravino-lightgrey?logo=github) [![MLX Local Server](https://img.shields.io/badge/Optional-MLX%20Local%20Server-ff6600?logo=apple)](https://github.com/ai-agents-cybersecurity/mlx-local-server-chat-and-responses)
 
 [![Apple Books](https://img.shields.io/badge/Apple_Books-AI_Agents_in_Cybersecurity-FA5B30?style=for-the-badge&logo=apple&logoColor=white)](https://books.apple.com/us/book/ai-agents-in-cybersecurity/id6751737181)
 
 A turnkey coding assistant CLI powered by [LangChain DeepAgents](https://github.com/langchain-ai/deepagents) and **Azure OpenAI**.
 
 Think Claude Code or OpenAI Codex CLI — but wired to your Azure OpenAI deployment, fully open source, and extensible with custom tools.
+
+<p align="center">
+  <img src="images/1.png" width="75%" />
+</p>
 
 ## What You Get
 
@@ -108,6 +112,21 @@ AZURE_OPENAI_ENDPOINT=https://my-resource.openai.azure.com
 AZURE_OPENAI_ENDPOINT=https://my-resource.openai.azure.com/openai/responses?api-version=2025-04-01-preview
 ```
 
+### Local inference with MLX (macOS only)
+
+If you have a Mac, you can run DeepAgent entirely offline using a local MLX server that emulates the Azure OpenAI API — fully compatible including tool calls, streaming, and the Responses API.
+
+1. Set up [mlx-local-server-chat-and-responses](https://github.com/ai-agents-cybersecurity/mlx-local-server-chat-and-responses) (Apache 2.0)
+2. Copy the local config template:
+   ```bash
+   cp .env.local.example .env
+   ```
+3. Start the MLX server, then run `daz` as usual.
+
+<p align="center">
+  <img src="images/2.png" width="75%" />
+</p>
+
 ## TUI Commands
 
 | Command | Description |
@@ -124,7 +143,6 @@ AZURE_OPENAI_ENDPOINT=https://my-resource.openai.azure.com/openai/responses?api-
 |---|---|
 | `Ctrl+C` | Quit |
 | `Ctrl+L` | Copy last assistant response to clipboard |
-| `Ctrl+T` | Copy full timeline to clipboard |
 
 ## Adding Custom Tools
 
@@ -209,7 +227,7 @@ The agent gets all of DeepAgents' built-in capabilities for free: `write_todos`,
 - **Interaction logging**: every request/completion is logged to daily JSONL files in `~/.deepagent-azure/logs/` with token-usage tracking, making cost attribution and debugging straightforward.
 - **Working directory hint**: when no custom system prompt is set, the agent now receives an explicit root-dir context line so relative paths resolve predictably.
 - **Improved HITL payloads**: the interrupt handler now supports the `action_requests` interrupt schema for richer approval metadata.
-- **Clipboard shortcuts**: `Ctrl+L` copies the last assistant response; `Ctrl+T` copies the full timeline.
+- **Clipboard shortcut**: `Ctrl+L` copies the last assistant response.
 
 ## Corporate Proxy Setup
 
